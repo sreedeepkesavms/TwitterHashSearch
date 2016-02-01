@@ -14,19 +14,24 @@
 
 #define CONSUMER_KEY @"2woaa9V18oasPUcHwUyLFdoEk"
 #define CONSUMER_SECRET @"WDR0wHwZ1p59xNH9yE6vqXtzb7BXsK13vTz9ir3ra7zjJzU9fi"
+#define MAX_TWEETS 50
+#define TWEETS_IN_SINGLE_FETCH 10
+#define REFRESH_INTERVAL_IN_SECONDS 10.0
 
 @interface ViewController (){
     
     NSMutableArray *tweetsArray;
+    NSTimer *refreshTimer;
+    NSString *searchString;
 }
 
 @property (weak, nonatomic) IBOutlet UISearchBar *hashTagSearchBar;
 @property (weak, nonatomic) IBOutlet UITableView *tweetsTableView;
 @property (nonatomic, strong) NSMutableDictionary *imageDownloadsInProgress;
 @property (nonatomic, strong) NSMutableDictionary *mediaDownloadsInProgress;
+@property (weak, nonatomic) IBOutlet UILabel *placeholderLabel;
 
 @property (nonatomic, weak)NSString *bearerToken;
-
 
 @end
 
@@ -35,12 +40,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     
-    self.tweetsTableView.dataSource = self;
-    self.tweetsTableView.delegate = self;
-    tweetsArray = [NSMutableArray array];
-    
-    self.tweetsTableView.rowHeight = UITableViewAutomaticDimension;
-    self.tweetsTableView.estimatedRowHeight = 300.0;
+    [self setUpView];
     // Do any additional setup after loading the view, typically from a nib.
 }
 
@@ -52,13 +52,24 @@
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     
-    [self getTweetsFromTwitter];
+    [self.tweetsTableView setHidden:YES];
 }
 
-- (void)getTweetsFromTwitter {
+- (void)setUpView {
+    
+    self.tweetsTableView.dataSource = self;
+    self.tweetsTableView.delegate = self;
+    self.hashTagSearchBar.delegate = self;
+    tweetsArray = [NSMutableArray array];
+    self.placeholderLabel.hidden = NO;    
+    self.tweetsTableView.rowHeight = UITableViewAutomaticDimension;
+    self.tweetsTableView.estimatedRowHeight = 300.0;
+}
+
+- (void)getTweetsFromTwitterUsingSearchString {
     
     if(self.bearerToken == nil) return;
-    NSURL *URL = [NSURL URLWithString:@"https://api.twitter.com/1.1/search/tweets.json?q=baseball&language=en&result_type=recent&since_id=693645135838445568&count=10"];
+    NSURL *URL = [NSURL URLWithString:[NSString stringWithFormat: @"https://api.twitter.com/1.1/search/tweets.json?q=%@&language=en&result_type=recent&since_id=693645135838445568&count=%d", searchString, TWEETS_IN_SINGLE_FETCH]];
     NSMutableURLRequest *urlRequest = [NSMutableURLRequest requestWithURL:URL cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:30.0];
     [urlRequest setValue:[NSString stringWithFormat:@"Bearer %@", self.bearerToken] forHTTPHeaderField:@"Authorization"];
     NSData *data = [NSURLConnection sendSynchronousRequest:urlRequest returningResponse:nil error:nil];
@@ -79,6 +90,14 @@
 
 - (void)processTweetsResponse:(NSDictionary *)responseDictionary {
     
+    NSMutableArray *oldArray = [NSMutableArray array];
+    
+    if (tweetsArray.count > 0) {
+        
+        oldArray = [NSMutableArray arrayWithArray:tweetsArray];
+    }
+    
+    NSMutableArray *newArray = [NSMutableArray array];
     if (responseDictionary)
     {
         id data = [responseDictionary valueForKey:@"statuses"];
@@ -87,12 +106,28 @@
             NSArray *dataArray = (NSArray*)data;
             for (NSDictionary *post in dataArray)
             {
-                [tweetsArray addObject:post];
+                [newArray addObject:post];
             }
         }
-        NSLog(@"tweetsArray - %@", tweetsArray[0]);
     }
+    if (oldArray.count <= (MAX_TWEETS - TWEETS_IN_SINGLE_FETCH)) {
+        
+        tweetsArray = [[newArray arrayByAddingObjectsFromArray:oldArray] mutableCopy];
+    }
+    else {
+        NSMutableArray *tempArray = [[oldArray subarrayWithRange:NSMakeRange(0, (MAX_TWEETS - TWEETS_IN_SINGLE_FETCH))] mutableCopy];
+        tweetsArray = [[newArray arrayByAddingObjectsFromArray:tempArray] mutableCopy];
+    }
+    
+    [self.tweetsTableView setHidden:NO];
+    [self.view endEditing:YES];
     [self.tweetsTableView reloadData];
+    [self addPageRefresh];
+}
+
+- (void)addPageRefresh {
+    
+    refreshTimer = [NSTimer scheduledTimerWithTimeInterval:REFRESH_INTERVAL_IN_SECONDS target:self selector:@selector(getTweetsFromTwitterUsingSearchString) userInfo:nil repeats:NO];
 }
 
 - (NSString *)bearerToken
@@ -102,9 +137,6 @@
         NSString * consumerKey = [CONSUMER_KEY stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLHostAllowedCharacterSet]];
         
         NSString * consumerSecret = [CONSUMER_SECRET stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLHostAllowedCharacterSet]];
-        
-        //the combined authentication key is "CONSUMER_KEY:CONSUMER_SECRET" run through base64 encoding.
-        //we'll use NSData instead of NSString here so that we can feed it directly to the HTTPRequest later.
         
         NSString * combinedKey = [[self class] _base64Encode:[[NSString stringWithFormat:@"%@:%@", consumerKey, consumerSecret] dataUsingEncoding:NSUTF8StringEncoding]];
         
@@ -280,9 +312,6 @@
 
 #pragma mark - Table cell image support
 
-// -------------------------------------------------------------------------------
-//	startIconDownload:forIndexPath:
-// -------------------------------------------------------------------------------
 - (void)startIconDownload:(AppRecord *)appRecord forIndexPath:(NSIndexPath *)indexPath
 {
     IconDownloader *iconDownloader = (self.imageDownloadsInProgress)[indexPath];
@@ -331,11 +360,6 @@
     }
 }
 
-// -------------------------------------------------------------------------------
-//	loadImagesForOnscreenRows
-//  This method is used in case the user scrolled into a set of cells that don't
-//  have their app icons yet.
-// -------------------------------------------------------------------------------
 - (void)loadImagesForOnscreenRows
 {
     if (tweetsArray.count > 0)
@@ -360,7 +384,7 @@
             if (!appRecord.mediaImage) {
                 
                 [self startMediaDownload:appRecord forIndexPath:indexPath];
-
+                
             }
         }
     }
@@ -368,10 +392,6 @@
 
 #pragma mark - UIScrollViewDelegate
 
-// -------------------------------------------------------------------------------
-//	scrollViewDidEndDragging:willDecelerate:
-//  Load images for all onscreen rows when scrolling is finished.
-// -------------------------------------------------------------------------------
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
 {
     if (!decelerate)
@@ -380,14 +400,40 @@
     }
 }
 
-// -------------------------------------------------------------------------------
-//	scrollViewDidEndDecelerating:scrollView
-//  When scrolling stops, proceed to load the app icons that are on screen.
-// -------------------------------------------------------------------------------
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
 {
     [self loadImagesForOnscreenRows];
 }
 
+#pragma mark - UISearchBarDelegate
+
+- (void)searchBarSearchButtonClicked:(UISearchBar *)searchBar {
+    
+    [tweetsArray removeAllObjects];
+
+    if ([searchBar.text isEqualToString:@""]) {
+        
+        [self.tweetsTableView reloadData];
+        self.tweetsTableView.hidden = YES;
+        self.placeholderLabel.hidden = NO;
+    }
+    
+    NSString *stringWithoutHashes = [searchBar.text
+                                     stringByReplacingOccurrencesOfString:@"#" withString:@""];
+    
+    self.placeholderLabel.hidden = YES;
+   
+    searchString = stringWithoutHashes;
+    [self getTweetsFromTwitterUsingSearchString];
+}
+
+- (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText {
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        
+        [refreshTimer invalidate];
+        refreshTimer = nil;
+    });
+}
 
 @end
