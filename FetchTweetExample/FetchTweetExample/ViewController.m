@@ -2,7 +2,7 @@
 //  ViewController.m
 //  FetchTweetExample
 //
-//  Created by Siraj rahman on 30/01/16.
+//  Created by Sreedeepkesav on 30/01/16.
 //  Copyright © 2016 test. All rights reserved.
 //
 
@@ -38,6 +38,9 @@
     self.tweetsTableView.dataSource = self;
     self.tweetsTableView.delegate = self;
     tweetsArray = [NSMutableArray array];
+    
+    self.tweetsTableView.rowHeight = UITableViewAutomaticDimension;
+    self.tweetsTableView.estimatedRowHeight = 300.0;
     // Do any additional setup after loading the view, typically from a nib.
 }
 
@@ -202,15 +205,10 @@
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
     
-   TweetsTableViewCell *cell = (TweetsTableViewCell *)[tableView dequeueReusableCellWithIdentifier:@"tweetsCell"];
+    return [self checkIfMediaPresent:(int)indexPath.row] ? 300 : UITableViewAutomaticDimension;
+}
 
-    cell.tweetTextLabel.text = tweetsArray[indexPath.row][@"text"];
-    
-    CGSize labelSize = [cell.tweetTextLabel.text sizeWithFont:cell.tweetTextLabel.font
-                                constrainedToSize:cell.tweetTextLabel.frame.size
-                                    lineBreakMode:NSLineBreakByWordWrapping];
-    
-    CGFloat labelHeight = labelSize.height;
+- (CGFloat)tableView:(UITableView *)tableView estimatedHeightForRowAtIndexPath:(NSIndexPath *)indexPath {
     
     return [self checkIfMediaPresent:(int)indexPath.row] ? 300 : 88;
 }
