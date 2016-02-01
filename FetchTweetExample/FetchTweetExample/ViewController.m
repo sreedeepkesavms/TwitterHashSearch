@@ -61,7 +61,7 @@
     self.tweetsTableView.delegate = self;
     self.hashTagSearchBar.delegate = self;
     tweetsArray = [NSMutableArray array];
-    self.placeholderLabel.hidden = NO;    
+    self.placeholderLabel.hidden = NO;
     self.tweetsTableView.rowHeight = UITableViewAutomaticDimension;
     self.tweetsTableView.estimatedRowHeight = 300.0;
 }
@@ -280,7 +280,7 @@
             [self startIconDownload:appRecord forIndexPath:indexPath];
         }
         // if a download is deferred or in progress, return a placeholder image
-        cell.profileImageView.image = [UIImage imageNamed:@"Placeholder.png"];
+        cell.profileImageView.image = [UIImage imageNamed:@"Placeholder"];
     }
     else
     {
@@ -301,7 +301,7 @@
                 [self startMediaDownload:appRecord forIndexPath:indexPath];
             }
             
-            cell.sharedMediaView.image = [UIImage imageNamed:@"Placeholder.png"];
+            cell.sharedMediaView.image = [UIImage imageNamed:@"loading"];
         }
         else
         {
